@@ -42,12 +42,10 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
-    
-    // Media3 ExoPlayer optimizado para RTSP
-    implementation("androidx.media3:media3-exoplayer:1.3.1")
-    implementation("androidx.media3:media3-ui:1.3.1")
-    implementation("androidx.media3:media3-exoplayer-rtsp:1.3.1")
-    
-    // Gson para persistir las cámaras añadidas
+
+    // Motor LibVLC para compatibilidad total con cámaras RTSP V380 Pro
+    implementation("org.videolan.android:libvlc-all:3.6.0")
+
+    // Gson para guardar las cámaras
     implementation("com.google.code.gson:gson:2.10.1")
 }
