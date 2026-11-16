@@ -1,29 +1,27 @@
 package com.example.multicam
 
 import android.content.Context
+import android.net.Uri
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.annotation.OptIn
-import androidx.media3.common.C
-import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.rtsp.RtspMediaSource
-import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.recyclerview.widget.RecyclerView
 import com.example.multicam.databinding.ItemCameraWidgetBinding
+import org.videolan.libvlc.LibVLC
+import org.videolan.libvlc.Media
+import org.videolan.libvlc.MediaPlayer
 
-@OptIn(UnstableApi::class)
 class CameraAdapter(
-    private val context: Context,
+    context: Context,
     private val cameras: List<CameraItem>,
     private val onDeleteClick: (CameraItem) -> Unit
 ) : RecyclerView.Adapter<CameraAdapter.CameraViewHolder>() {
 
-    private val activePlayers = mutableMapOf<String, ExoPlayer>()
+    private val libVLC = LibVLC(
+        context.applicationContext,
+        arrayListOf("--network-caching=400", "--no-audio")
+    )
+    private val activePlayers = mutableMapOf<String, MediaPlayer>()
 
     inner class CameraViewHolder(val binding: ItemCameraWidgetBinding) : RecyclerView.ViewHolder(binding.root)
 
@@ -39,65 +37,72 @@ class CameraAdapter(
         holder.binding.tvStatus.text = "Conectando..."
         holder.binding.btnDelete.setOnClickListener { onDeleteClick(camera) }
 
-        activePlayers[camera.id]?.release()
-
-        // Desactivar pista de audio para evitar que paquetes de voz bloqueen el video
-        val trackSelector = DefaultTrackSelector(context).apply {
-            setParameters(
-                buildUponParameters()
-                    .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
-            )
+        activePlayers[camera.id]?.let { oldPlayer ->
+            oldPlayer.stop()
+            oldPlayer.detachViews()
+            oldPlayer.release()
         }
 
-        val player = ExoPlayer.Builder(context)
-            .setTrackSelector(trackSelector)
-            .build()
-            .apply {
-                val mediaItem = MediaItem.fromUri(camera.rtspUrl)
-                // Forzar TCP y aumentar timeout para cámaras Wi-Fi
-                val mediaSource = RtspMediaSource.Factory()
-                    .setForceUseRtpTcp(true)
-                    .setTimeoutMs(10000L)
-                    .createMediaSource(mediaItem)
+        val mediaPlayer = MediaPlayer(libVLC)
+        mediaPlayer.attachViews(holder.binding.videoLayout, null, false, false)
 
-                addListener(object : Player.Listener {
-                    override fun onPlaybackStateChanged(playbackState: Int) {
-                        when (playbackState) {
-                            Player.STATE_BUFFERING -> {
-                                holder.binding.tvStatus.visibility = View.VISIBLE
-                                holder.binding.tvStatus.text = "Conectando..."
-                            }
-                            Player.STATE_READY -> {
-                                holder.binding.tvStatus.visibility = View.GONE
-                            }
-                            Player.STATE_ENDED -> {
-                                holder.binding.tvStatus.visibility = View.VISIBLE
-                                holder.binding.tvStatus.text = "Flujo finalizado"
-                            }
-                            else -> {}
+        mediaPlayer.setEventListener { event ->
+            holder.itemView.post {
+                when (event.type) {
+                    MediaPlayer.Event.Opening -> {
+                        holder.binding.tvStatus.visibility = View.VISIBLE
+                        holder.binding.tvStatus.text = "Conectando..."
+                    }
+                    MediaPlayer.Event.Buffering -> {
+                        if (event.buffering < 100f) {
+                            holder.binding.tvStatus.visibility = View.VISIBLE
+                            holder.binding.tvStatus.text = "Cargando (${event.buffering.toInt()}%)..."
+                        } else {
+                            holder.binding.tvStatus.visibility = View.GONE
                         }
                     }
-
-                    override fun onPlayerError(error: PlaybackException) {
-                        holder.binding.tvStatus.visibility = View.VISIBLE
-                        holder.binding.tvStatus.text = "Error: ${error.errorCodeName}"
+                    MediaPlayer.Event.Playing,
+                    MediaPlayer.Event.Vout -> {
+                        holder.binding.tvStatus.visibility = View.GONE
                     }
-                })
-
-                setMediaSource(mediaSource)
-                prepare()
-                playWhenReady = true
-                repeatMode = Player.REPEAT_MODE_ALL
+                    MediaPlayer.Event.EncounteredError -> {
+                        holder.binding.tvStatus.visibility = View.VISIBLE
+                        holder.binding.tvStatus.text = "Error de conexión RTSP"
+                    }
+                    MediaPlayer.Event.EndReached -> {
+                        holder.binding.tvStatus.visibility = View.VISIBLE
+                        holder.binding.tvStatus.text = "Señal interrumpida"
+                    }
+                }
             }
+        }
 
-        activePlayers[camera.id] = player
-        holder.binding.playerView.player = player
+        val media = Media(libVLC, Uri.parse(camera.rtspUrl)).apply {
+            setHWDecoderEnabled(true, false)
+            addOption(":network-caching=400")
+            addOption(":no-audio")
+        }
+
+        mediaPlayer.media = media
+        media.release()
+        mediaPlayer.play()
+
+        activePlayers[camera.id] = mediaPlayer
     }
 
     override fun getItemCount(): Int = cameras.size
 
-    fun releaseAllPlayers() {
-        activePlayers.values.forEach { it.release() }
+    fun stopAllPlayers() {
+        activePlayers.values.forEach { player ->
+            player.stop()
+            player.detachViews()
+            player.release()
+        }
         activePlayers.clear()
+    }
+
+    fun releaseEngine() {
+        stopAllPlayers()
+        libVLC.release()
     }
 }
