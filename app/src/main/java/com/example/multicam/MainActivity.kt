@@ -41,7 +41,6 @@ class MainActivity : AppCompatActivity() {
         val etName = dialogView.findViewById<EditText>(R.id.etCameraName)
         val etUrl = dialogView.findViewById<EditText>(R.id.etRtspUrl)
 
-        // Prellenar con tu URL de ejemplo
         etUrl.setText("rtsp://admin:Camara2026@192.168.1.201:554/live/ch00_0")
         etName.setText("Cámara Principal")
 
@@ -67,8 +66,7 @@ class MainActivity : AppCompatActivity() {
         if (index != -1) {
             cameraList.removeAt(index)
             saveCameras()
-            cameraAdapter.notifyItemRemoved(index)
-            cameraAdapter.releaseAllPlayers()
+            cameraAdapter.stopAllPlayers()
             cameraAdapter.notifyDataSetChanged()
         }
     }
@@ -88,7 +86,6 @@ class MainActivity : AppCompatActivity() {
             cameraList.clear()
             cameraList.addAll(saved)
         } else {
-            // Cámara por defecto inicial solicitada
             cameraList.add(
                 CameraItem(
                     id = UUID.randomUUID().toString(),
@@ -101,6 +98,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        cameraAdapter.releaseAllPlayers()
+        cameraAdapter.releaseEngine()
     }
 }
